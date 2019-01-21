@@ -217,3 +217,11 @@ If you love cats, and love reading cool graphics, vision, and learning papers, p
 
 ## Acknowledgments
 Our code is inspired by [pytorch-DCGAN](https://github.com/pytorch/examples/tree/master/dcgan).
+
+## code
+self.fake_B = self.netG_A(self.real_A)
+self.rec_A = self.netG_B(self.fake_B)
+self.fake_A = self.netG_B(self.real_B)
+self.rec_B = self.netG_A(self.fake_A)
+self.idt_A = self.netG_A(self.real_B)
+self.idt_B = self.netG_B(self.real_A)
