@@ -143,8 +143,10 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
     elif netG == 'resnet_6blocks' and which == 'A':
         net = ResnetGenerator_A(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
-    elif netG == 'resnet_6blocks' and which == 'B':
-        net = ResnetGenerator_B(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
+    elif netG == 'resnet_6blocks' and which == 'Bencoder':
+        net = ResnetGenerator_B_encoder(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
+    elif netG == 'resnet_6blocks' and which == 'Bdecoder':
+        net = ResnetGenerator_B_decoder(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
     elif netG == 'unet_128':
         net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'unet_256':
@@ -375,14 +377,8 @@ class ResnetGenerator_A(nn.Module):
         """Standard forward"""
         feature = self.encoder(input)
         n,c,h,w = feature.size()
-        return self.decoder(feature[:,:int(c/2),:,:]), feature[:,int(c/2):,:,:]
+        return self.decoder(feature[:,:int(c/2),:,:]), feature[:,int(c/2):,:,:], feature
     
-    def forward_encoder(self, input):
-        """Standard forward"""
-        feature = self.encoder(input)
-        n,c,h,w = feature.size()
-        return feature
-
 class ResnetGenerator_B_encoder(nn.Module):
     """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
 
@@ -426,31 +422,12 @@ class ResnetGenerator_B_encoder(nn.Module):
             encoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
 
             
-        decoder = []
-        ngf = int(ngf*2)
-        for i in range(int(n_blocks/2)):       # add ResNet blocks
-            decoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
-        
-        for i in range(n_downsampling):  # add upsampling layers
-            mult = 2 ** (n_downsampling - i)
-            decoder += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
-                                         kernel_size=3, stride=2,
-                                         padding=1, output_padding=1,
-                                         bias=use_bias),
-                      norm_layer(int(ngf * mult / 2)),
-                      nn.ReLU(True)]
-        decoder += [nn.ReflectionPad2d(3)]
-        decoder += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
-        decoder += [nn.Tanh()]
-
         self.encoder = nn.Sequential(*encoder)
-        self.decoder = nn.Sequential(*decoder)
 
-    def forward(self, input, feature_A):
+    def forward(self, input):
         """Standard forward"""
         feature = self.encoder(input)
-        feature_new = torch.cat([feature, feature_A], dim=1)
-        return self.decoder(feature_new)
+        return feature
 
 
 class ResnetGenerator_B_decoder(nn.Module):
@@ -478,26 +455,14 @@ class ResnetGenerator_B_decoder(nn.Module):
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
 
-        ngf = int(ngf/2)
-        encoder = [nn.ReflectionPad2d(3),
-                 nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
-                 norm_layer(ngf),
-                 nn.ReLU(True)]
+
 
         n_downsampling = 2
-        for i in range(n_downsampling):  # add downsampling layers
-            mult = 2 ** i
-            encoder += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
-                      norm_layer(ngf * mult * 2),
-                      nn.ReLU(True)]
+
 
         mult = 2 ** n_downsampling
-        for i in range(int(n_blocks/2)):       # add ResNet blocks
-            encoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
-
             
         decoder = []
-        ngf = int(ngf*2)
         for i in range(int(n_blocks/2)):       # add ResNet blocks
             decoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
         
@@ -513,13 +478,11 @@ class ResnetGenerator_B_decoder(nn.Module):
         decoder += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
         decoder += [nn.Tanh()]
 
-        self.encoder = nn.Sequential(*encoder)
         self.decoder = nn.Sequential(*decoder)
 
     def forward(self, input, feature_A):
         """Standard forward"""
-        feature = self.encoder(input)
-        feature_new = torch.cat([feature, feature_A], dim=1)
+        feature_new = torch.cat([input, feature_A], dim=1)
         return self.decoder(feature_new)
     
 
