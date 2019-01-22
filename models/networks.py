@@ -351,12 +351,13 @@ class ResnetGenerator_A(nn.Module):
 
             
         decoder = []
+        mult = 2 ** (n_downsampling-1)
         
         for i in range(int(n_blocks/2)):       # add ResNet blocks
             decoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
         
         for i in range(n_downsampling):  # add upsampling layers
-            mult = 2 ** (n_downsampling - i)
+            mult = 2 ** (n_downsampling - i -1)
             decoder += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
                                          kernel_size=3, stride=2,
                                          padding=1, output_padding=1,
@@ -364,7 +365,7 @@ class ResnetGenerator_A(nn.Module):
                       norm_layer(int(ngf * mult / 2)),
                       nn.ReLU(True)]
         decoder += [nn.ReflectionPad2d(3)]
-        decoder += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
+        decoder += [nn.Conv2d(ngf/2, output_nc, kernel_size=7, padding=0)]
         decoder += [nn.Tanh()]
 
         self.encoder = nn.Sequential(*encoder)
@@ -373,9 +374,16 @@ class ResnetGenerator_A(nn.Module):
     def forward(self, input):
         """Standard forward"""
         feature = self.encoder(input)
-        return self.decoder(feature)
+        n,c,h,w = feature.size()
+        return self.decoder(feature[:,:int(c/2),:,:]), feature[:,int(c/2):,:,:]
+    
+    def forward_encoder(self, input):
+        """Standard forward"""
+        feature = self.encoder(input)
+        n,c,h,w = feature.size()
+        return feature
 
-class ResnetGenerator_B(nn.Module):
+class ResnetGenerator_B_encoder(nn.Module):
     """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
 
     We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
@@ -394,12 +402,13 @@ class ResnetGenerator_B(nn.Module):
             padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
         """
         assert(n_blocks >= 0)
-        super(ResnetGenerator_B, self).__init__()
+        super(ResnetGenerator_B_encoder, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
 
+        ngf = int(ngf/2)
         encoder = [nn.ReflectionPad2d(3),
                  nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
                  norm_layer(ngf),
@@ -418,7 +427,7 @@ class ResnetGenerator_B(nn.Module):
 
             
         decoder = []
-        
+        ngf = int(ngf*2)
         for i in range(int(n_blocks/2)):       # add ResNet blocks
             decoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
         
@@ -437,11 +446,82 @@ class ResnetGenerator_B(nn.Module):
         self.encoder = nn.Sequential(*encoder)
         self.decoder = nn.Sequential(*decoder)
 
-    def forward(self, input):
+    def forward(self, input, feature_A):
         """Standard forward"""
         feature = self.encoder(input)
-        return self.decoder(feature)
+        feature_new = torch.cat([feature, feature_A], dim=1)
+        return self.decoder(feature_new)
 
+
+class ResnetGenerator_B_decoder(nn.Module):
+    """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
+
+    We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
+    """
+
+    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect'):
+        """Construct a Resnet-based generator
+
+        Parameters:
+            input_nc (int)      -- the number of channels in input images
+            output_nc (int)     -- the number of channels in output images
+            ngf (int)           -- the number of filters in the last conv layer
+            norm_layer          -- normalization layer
+            use_dropout (bool)  -- if use dropout layers
+            n_blocks (int)      -- the number of ResNet blocks
+            padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
+        """
+        assert(n_blocks >= 0)
+        super(ResnetGenerator_B_decoder, self).__init__()
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        ngf = int(ngf/2)
+        encoder = [nn.ReflectionPad2d(3),
+                 nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
+                 norm_layer(ngf),
+                 nn.ReLU(True)]
+
+        n_downsampling = 2
+        for i in range(n_downsampling):  # add downsampling layers
+            mult = 2 ** i
+            encoder += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
+                      norm_layer(ngf * mult * 2),
+                      nn.ReLU(True)]
+
+        mult = 2 ** n_downsampling
+        for i in range(int(n_blocks/2)):       # add ResNet blocks
+            encoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
+
+            
+        decoder = []
+        ngf = int(ngf*2)
+        for i in range(int(n_blocks/2)):       # add ResNet blocks
+            decoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
+        
+        for i in range(n_downsampling):  # add upsampling layers
+            mult = 2 ** (n_downsampling - i)
+            decoder += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
+                                         kernel_size=3, stride=2,
+                                         padding=1, output_padding=1,
+                                         bias=use_bias),
+                      norm_layer(int(ngf * mult / 2)),
+                      nn.ReLU(True)]
+        decoder += [nn.ReflectionPad2d(3)]
+        decoder += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
+        decoder += [nn.Tanh()]
+
+        self.encoder = nn.Sequential(*encoder)
+        self.decoder = nn.Sequential(*decoder)
+
+    def forward(self, input, feature_A):
+        """Standard forward"""
+        feature = self.encoder(input)
+        feature_new = torch.cat([feature, feature_A], dim=1)
+        return self.decoder(feature_new)
+    
 
 class ResnetBlock(nn.Module):
     """Define a Resnet block"""
