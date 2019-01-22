@@ -480,10 +480,10 @@ class ResnetGenerator_B_decoder(nn.Module):
 
         self.decoder = nn.Sequential(*decoder)
 
-    def forward(self, input, feature_A):
+    def forward(self, input):
         """Standard forward"""
-        feature_new = torch.cat([input, feature_A], dim=1)
-        return self.decoder(feature_new)
+        
+        return self.decoder(input)
     
 
 class ResnetBlock(nn.Module):
