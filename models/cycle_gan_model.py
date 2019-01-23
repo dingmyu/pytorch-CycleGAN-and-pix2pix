@@ -55,7 +55,7 @@ class CycleGANModel(BaseModel):
         self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_B']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'rec_A']
-        visual_names_B = []
+        visual_names_B = ['real_B', 'idt_A']
 
         if self.isTrain and self.opt.lambda_identity > 0.0:  # if identity loss is used, we also visualize G_B(A) ad G_A(B)
             visual_names_B.append('idt_B')
@@ -119,6 +119,8 @@ class CycleGANModel(BaseModel):
         feature_new = torch.cat([feature, self.A_all[:,int(c/2):,:,:]], dim=1)
         self.rec_A = self.netG_Bdecoder(feature_new)   # G_B(G_A(A))
         print('Gen conA')
+        
+        self.B_feature = self.netG_Bencoder(self.real_B)
        # self.fake_A = self.netG_B(self.real_B)  # G_B(B)
        # self.rec_B = self.netG_A(self.fake_A)   # G_A(G_B(B))
 
@@ -162,11 +164,13 @@ class CycleGANModel(BaseModel):
     #        self.idt_A = self.netG_A(self.real_B)
      #       self.loss_idt_A = self.criterionIdt(self.idt_A, self.real_B) * lambda_B * lambda_idt
             # G_B should be identity if real_A is fed: ||G_B(A) - A||
-            self.idt_B = self.netG_Bdecoder(self.A_all.detach())
+            self.idt_B = self.netG_Bdecoder(self.A_all) #.detach()
+            self.idt_A = self.netG_Adecoder(self.B_feature) #.detach()
             print('idt')
             self.loss_idt_B = self.criterionIdt(self.idt_B, self.real_A) * lambda_A * lambda_idt
+            self.loss_idt_A = self.criterionIdt(self.idt_A, self.real_B) * lambda_B * lambda_idt
         else:
-   #         self.loss_idt_A = 0
+            self.loss_idt_A = 0
             self.loss_idt_B = 0
 
         # GAN loss D_A(G_A(A))
@@ -179,7 +183,7 @@ class CycleGANModel(BaseModel):
         # Backward cycle loss || G_A(G_B(B)) - B||
    #     self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B) * lambda_B
         # combined loss and calculate gradients
-        self.loss_G = self.loss_G_A + self.loss_cycle_A + self.loss_idt_B
+        self.loss_G = self.loss_G_A + self.loss_cycle_A + self.loss_idt_B + self.loss_idt_A
         self.loss_G.backward()
 
     def optimize_parameters(self):
