@@ -201,7 +201,7 @@ class CycleGANModel(BaseModel):
 
         #print(self.netD_glass(self.fake_A).size())
         #print(self.label.size())
-        self.loss_glass = self.criterionGlass(self.netD_glass(self.fake_A).squeeze(3).squeeze(2), self.label)
+        self.loss_glass = self.criterionGlass(self.netD_glass(self.fake_A).squeeze(3).squeeze(2), self.label) + self.criterionGlass(self.netD_glass(self.real_B).squeeze(3).squeeze(2), self.label)
         print(self.loss_glass) 
         
         self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_idt_B + self.loss_idt_A + self.loss_glass #- self.loss_cycle_B

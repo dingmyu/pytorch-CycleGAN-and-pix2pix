@@ -83,17 +83,20 @@ def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, conve
     if grayscale:
         transform_list.append(transforms.Grayscale(1))
     if 'resize' in opt.preprocess:
-        osize = [opt.load_size, opt.load_size]
+        if not cartoon:
+            osize = [opt.load_size, opt.load_size]
+        else:
+            osize = [240,240]
         transform_list.append(transforms.Resize(osize, method))
     elif 'scale_width' in opt.preprocess:
         transform_list.append(transforms.Lambda(lambda img: __scale_width(img, opt.load_size, method)))
 
     if 'crop' in opt.preprocess:
         if params is None:
-            if not cartoon:
-                transform_list.append(transforms.RandomCrop(opt.crop_size))
-            else:
-                transform_list.append(transforms.CenterCrop(opt.crop_size))
+           # if not cartoon:
+           #     transform_list.append(transforms.RandomCrop(opt.crop_size))
+           # else:
+            transform_list.append(transforms.CenterCrop(opt.crop_size))
         else:
             transform_list.append(transforms.Lambda(lambda img: __crop(img, params['crop_pos'], opt.crop_size)))
 
