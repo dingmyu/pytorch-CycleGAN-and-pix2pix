@@ -63,15 +63,17 @@ class CycleGANModel(BaseModel):
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         if self.isTrain:
-            self.model_names = ['G_A', 'G_Bencoder', 'G_Bdecoder', 'D_A']
+            self.model_names = ['G_Aencoder', 'G_Adecoder', 'G_Bencoder', 'G_Bdecoder', 'D_A']
         else:  # during test time, only load Gs
             self.model_names = ['G_A', 'G_B']
 
         # define networks (both Generators and discriminators)
         # The naming is different from those used in the paper.
         # Code (vs. paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
-        self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, 'A')
+        self.netG_Aencoder = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, 'Aencoder')
+        self.netG_Adecoder = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, 'Adecoder')
         self.netG_Bencoder = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, 'Bencoder')
         self.netG_Bdecoder = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
@@ -89,7 +91,7 @@ class CycleGANModel(BaseModel):
             self.criterionCycle = torch.nn.L1Loss()
             self.criterionIdt = torch.nn.L1Loss()
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A.parameters(), self.netG_Bencoder.parameters(), self.netG_Bdecoder.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_Aencoder.parameters(), self.netG_Adecoder.parameters(), self.netG_Bencoder.parameters(), self.netG_Bdecoder.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
@@ -109,12 +111,14 @@ class CycleGANModel(BaseModel):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_B, self.A_feature, self.A_all = self.netG_A(self.real_A)  # G_A(A)
-       # print('Gen fakeB')
+        self.A_all = self.netG_Aencoder(self.real_A)  # G_A(A)
+        n,c,w,h = self.A_all.size()
+        self.fake_B = self.netG_Adecoder(self.A_all[:,:int(c/2),:,:])
+        print('Gen fakeB')
         feature = self.netG_Bencoder(self.fake_B)
-        feature_new = torch.cat([feature, self.A_feature], dim=1)
+        feature_new = torch.cat([feature, self.A_all[:,int(c/2):,:,:]], dim=1)
         self.rec_A = self.netG_Bdecoder(feature_new)   # G_B(G_A(A))
-       # print('Gen conA')
+        print('Gen conA')
        # self.fake_A = self.netG_B(self.real_B)  # G_B(B)
        # self.rec_B = self.netG_A(self.fake_A)   # G_A(G_B(B))
 
@@ -143,9 +147,9 @@ class CycleGANModel(BaseModel):
     def backward_D_A(self):
         """Calculate GAN loss for discriminator D_A"""
         fake_B = self.fake_B_pool.query(self.fake_B)
-       # print('get fakeB and realB')
+        print('get fakeB and realB')
         self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, fake_B)
-       # print('backward_D_A loss')
+        print('backward_D_A loss')
 
     def backward_G(self):
         """Calculate the loss for generators G_A and G_B"""
@@ -159,7 +163,7 @@ class CycleGANModel(BaseModel):
      #       self.loss_idt_A = self.criterionIdt(self.idt_A, self.real_B) * lambda_B * lambda_idt
             # G_B should be identity if real_A is fed: ||G_B(A) - A||
             self.idt_B = self.netG_Bdecoder(self.A_all.detach())
-           # print('idt')
+            print('idt')
             self.loss_idt_B = self.criterionIdt(self.idt_B, self.real_A) * lambda_A * lambda_idt
         else:
    #         self.loss_idt_A = 0
@@ -171,7 +175,7 @@ class CycleGANModel(BaseModel):
    #     self.loss_G_B = self.criterionGAN(self.netD_B(self.fake_A), True)
         # Forward cycle loss || G_B(G_A(A)) - A||
         self.loss_cycle_A = self.criterionCycle(self.rec_A, self.real_A) * lambda_A
-       # print('loss_cycle_A')
+        print('loss_cycle_A')
         # Backward cycle loss || G_A(G_B(B)) - B||
    #     self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B) * lambda_B
         # combined loss and calculate gradients
@@ -182,16 +186,16 @@ class CycleGANModel(BaseModel):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
         self.forward()      # compute fake images and reconstruction images.
-       # print('forward_finish!')
+        print('forward_finish!')
         # G_A and G_B
         self.set_requires_grad([self.netD_A], False)  # Ds require no gradients when optimizing Gs
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
         self.backward_G()             # calculate gradients for G_A and G_B
-      #  print('backward_G_finish!')
+        print('backward_G_finish!')
         self.optimizer_G.step()       # update G_A and G_B's weights
         # D_A and D_B
         self.set_requires_grad([self.netD_A], True)
         self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
         self.backward_D_A()      # calculate gradients for D_A
-      #  print('backward_D_finish!')
+        print('backward_D_finish!')
         self.optimizer_D.step()  # update D_A and D_B's weights

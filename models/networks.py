@@ -141,8 +141,10 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
 
     if netG == 'resnet_9blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
-    elif netG == 'resnet_6blocks' and which == 'A':
-        net = ResnetGenerator_A(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
+    elif netG == 'resnet_6blocks' and which == 'Aencoder':
+        net = ResnetGenerator_A_encoder(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
+    elif netG == 'resnet_6blocks' and which == 'Adecoder':
+        net = ResnetGenerator_A_decoder(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
     elif netG == 'resnet_6blocks' and which == 'Bencoder':
         net = ResnetGenerator_B_encoder(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
     elif netG == 'resnet_6blocks' and which == 'Bdecoder':
@@ -310,7 +312,7 @@ def cal_gradient_penalty(netD, real_data, fake_data, device, type='mixed', const
         return 0.0, None
 
 
-class ResnetGenerator_A(nn.Module):
+class ResnetGenerator_A_encoder(nn.Module):
     """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
 
     We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
@@ -329,7 +331,7 @@ class ResnetGenerator_A(nn.Module):
             padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
         """
         assert(n_blocks >= 0)
-        super(ResnetGenerator_A, self).__init__()
+        super(ResnetGenerator_A_encoder, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
@@ -351,6 +353,43 @@ class ResnetGenerator_A(nn.Module):
         for i in range(int(n_blocks/2)):       # add ResNet blocks
             encoder += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
 
+
+        self.encoder = nn.Sequential(*encoder)
+
+    def forward(self, input):
+        """Standard forward"""
+        feature = self.encoder(input)
+        return feature
+
+    
+class ResnetGenerator_A_decoder(nn.Module):
+    """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
+
+    We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
+    """
+
+    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect'):
+        """Construct a Resnet-based generator
+
+        Parameters:
+            input_nc (int)      -- the number of channels in input images
+            output_nc (int)     -- the number of channels in output images
+            ngf (int)           -- the number of filters in the last conv layer
+            norm_layer          -- normalization layer
+            use_dropout (bool)  -- if use dropout layers
+            n_blocks (int)      -- the number of ResNet blocks
+            padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
+        """
+        assert(n_blocks >= 0)
+        super(ResnetGenerator_A_decoder, self).__init__()
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+
+
+        n_downsampling = 2
             
         decoder = []
         mult = 2 ** (n_downsampling-1)
@@ -370,14 +409,11 @@ class ResnetGenerator_A(nn.Module):
         decoder += [nn.Conv2d(ngf/2, output_nc, kernel_size=7, padding=0)]
         decoder += [nn.Tanh()]
 
-        self.encoder = nn.Sequential(*encoder)
         self.decoder = nn.Sequential(*decoder)
 
     def forward(self, input):
         """Standard forward"""
-        feature = self.encoder(input)
-        n,c,h,w = feature.size()
-        return self.decoder(feature[:,:int(c/2),:,:]), feature[:,int(c/2):,:,:], feature
+        return self.decoder(input)
     
 class ResnetGenerator_B_encoder(nn.Module):
     """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
