@@ -78,7 +78,7 @@ def get_params(opt, size):
     return {'crop_pos': (x, y), 'flip': flip}
 
 
-def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, convert=True):
+def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, convert=True, cartoon=False):
     transform_list = []
     if grayscale:
         transform_list.append(transforms.Grayscale(1))
@@ -90,8 +90,10 @@ def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, conve
 
     if 'crop' in opt.preprocess:
         if params is None:
-            #transform_list.append(transforms.RandomCrop(opt.crop_size))
-            transform_list.append(transforms.CenterCrop(opt.crop_size))
+            if not cartoon:
+                transform_list.append(transforms.RandomCrop(opt.crop_size))
+            else:
+                transform_list.append(transforms.CenterCrop(opt.crop_size))
         else:
             transform_list.append(transforms.Lambda(lambda img: __crop(img, params['crop_pos'], opt.crop_size)))
 
