@@ -63,7 +63,7 @@ class CycleGANModel(BaseModel):
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         if self.isTrain:
-            self.model_names = ['G_Aencoder', 'G_Adecoder', 'G_Bencoder', 'G_Bdecoder', 'D_A']
+            self.model_names = ['G_Aencoder', 'G_Adecoder', 'G_Bencoder', 'G_Bdecoder', 'D_A', 'D_B']
         else:  # during test time, only load Gs
             self.model_names = ['G_A', 'G_B']
 
@@ -193,7 +193,7 @@ class CycleGANModel(BaseModel):
         self.loss_cycle_A = self.criterionCycle(self.rec_A, self.real_A) * lambda_A
         print('loss_cycle_A')
         # Backward cycle loss || G_A(G_B(B)) - B||
-        self.loss_cycle_B = torch.log(torch.log(self.criterionCycle(self.fake_A, self.rec_A) * lambda_B + 1)+1)/2
+        self.loss_cycle_B = torch.log(torch.log(self.criterionCycle(self.fake_A, self.rec_A.detach()) * lambda_B + 1)+1)/2
         # combined loss and calculate gradients
         self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_idt_B + self.loss_idt_A - self.loss_cycle_B
         self.loss_G.backward()
