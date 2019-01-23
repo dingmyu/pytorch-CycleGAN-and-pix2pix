@@ -52,7 +52,7 @@ class CycleGANModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'D_B', 'G_B', 'cycle_B', 'idt_B', 'idt_A']
+        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'D_B', 'G_B', 'cycle_B', 'idt_B', 'idt_A', 'glass']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'rec_A', 'idt_B']
         visual_names_B = ['real_B', 'fake_A', 'idt_A']
@@ -63,7 +63,7 @@ class CycleGANModel(BaseModel):
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         if self.isTrain:
-            self.model_names = ['G_Aencoder', 'G_Adecoder', 'G_Bencoder', 'G_Bdecoder', 'D_A', 'D_B']
+            self.model_names = ['G_Aencoder', 'G_Adecoder', 'G_Bencoder', 'G_Bdecoder', 'D_A', 'D_B', 'D_glass']
         else:  # during test time, only load Gs
             self.model_names = ['G_A', 'G_B']
 
@@ -83,7 +83,8 @@ class CycleGANModel(BaseModel):
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
             self.netD_B = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
-            
+            self.netD_glass = networks.define_D(opt.input_nc, opt.ndf, 'glass',
+                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)            
         if self.isTrain:
             if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
                 assert(opt.input_nc == opt.output_nc)
@@ -93,8 +94,9 @@ class CycleGANModel(BaseModel):
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             self.criterionCycle = torch.nn.L1Loss()
             self.criterionIdt = torch.nn.L1Loss()
+            self.criterionGlass = torch.nn.CrossEntropyLoss().to(self.device)
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_Aencoder.parameters(), self.netG_Adecoder.parameters(), self.netG_Bencoder.parameters(), self.netG_Bdecoder.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_Aencoder.parameters(), self.netG_Adecoder.parameters(), self.netG_Bencoder.parameters(), self.netG_Bdecoder.parameters(), self.netD_glass.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(),self.netD_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
@@ -110,6 +112,7 @@ class CycleGANModel(BaseModel):
         AtoB = self.opt.direction == 'AtoB'
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        self.label =input['label'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
@@ -195,7 +198,13 @@ class CycleGANModel(BaseModel):
         # Backward cycle loss || G_A(G_B(B)) - B||
         self.loss_cycle_B = torch.log(torch.log(self.criterionCycle(self.fake_A, self.rec_A.detach()) * lambda_B + 1)+1)/2
         # combined loss and calculate gradients
-        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_idt_B + self.loss_idt_A - self.loss_cycle_B
+
+        #print(self.netD_glass(self.fake_A).size())
+        #print(self.label.size())
+        self.loss_glass = self.criterionGlass(self.netD_glass(self.fake_A).squeeze(3).squeeze(2), self.label)
+        print(self.loss_glass) 
+        
+        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_idt_B + self.loss_idt_A + self.loss_glass #- self.loss_cycle_B
         self.loss_G.backward()
 
     def optimize_parameters(self):
@@ -207,11 +216,13 @@ class CycleGANModel(BaseModel):
         self.set_requires_grad([self.netD_A,self.netD_B], False)  # Ds require no gradients when optimizing Gs
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
         self.backward_G()             # calculate gradients for G_A and G_B
-        print('backward_G_finish!')
+        print('backward_G_finish!')      
+
         self.optimizer_G.step()       # update G_A and G_B's weights
         # D_A and D_B
         self.set_requires_grad([self.netD_A,self.netD_B], True)
         self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
+        
         self.backward_D_A()      # calculate gradients for D_A
         self.backward_D_B()      # calculate graidents for D_B
         print('backward_D_finish!')
