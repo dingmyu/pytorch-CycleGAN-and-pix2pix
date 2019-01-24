@@ -54,18 +54,19 @@ class CycleGANModel(BaseModel):
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['D_A', 'G_A', 'cycle_A', 'D_B', 'G_B', 'cycle_B', 'idt_B', 'idt_A', 'glass']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
-        visual_names_A = ['real_A', 'fake_B', 'rec_A', 'idt_B']
-        visual_names_B = ['real_B', 'fake_A', 'idt_A']
+        visual_names_A = ['real_A', 'fake_B', 'rec_A']
+        visual_names_B = ['real_B', 'fake_A']
 
         if self.isTrain and self.opt.lambda_identity > 0.0:  # if identity loss is used, we also visualize G_B(A) ad G_A(B)
-            visual_names_B.append('idt_B')
+            visual_names_B.append('idt_A')
+            visual_names_A.append('idt_B')
 
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         if self.isTrain:
             self.model_names = ['G_Aencoder', 'G_Adecoder', 'G_Bencoder', 'G_Bdecoder', 'D_A', 'D_B', 'D_glass']
         else:  # during test time, only load Gs
-            self.model_names = ['G_A', 'G_B']
+            self.model_names = ['G_Aencoder', 'G_Adecoder', 'G_Bencoder', 'G_Bdecoder']
 
         # define networks (both Generators and discriminators)
         # The naming is different from those used in the paper.
@@ -129,7 +130,10 @@ class CycleGANModel(BaseModel):
         self.B_feature = self.netG_Bencoder(self.real_B)
        # self.fake_A = self.netG_B(self.real_B)  # G_B(B)
        # self.rec_B = self.netG_A(self.fake_A)   # G_A(G_B(B))
-
+        n,c,w,h = self.A_all.size()
+        feature_new = torch.cat([self.B_feature, self.A_all[:,int(c/2):,:,:]], dim=1)
+        self.fake_A = self.netG_Bdecoder(feature_new)
+        
     def backward_D_basic(self, netD, real, fake):
         """Calculate GAN loss for the discriminator
 
@@ -187,9 +191,6 @@ class CycleGANModel(BaseModel):
         # GAN loss D_A(G_A(A))
         self.loss_G_A = self.criterionGAN(self.netD_A(self.fake_B), True)
         # GAN loss D_B(G_B(B))
-        n,c,w,h = self.A_all.size()
-        feature_new = torch.cat([self.B_feature, self.A_all[:,int(c/2):,:,:]], dim=1)
-        self.fake_A = self.netG_Bdecoder(feature_new)
         
         self.loss_G_B = self.criterionGAN(self.netD_B(self.fake_A), True)
         # Forward cycle loss || G_B(G_A(A)) - A||
