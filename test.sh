@@ -1,0 +1,1 @@
+srun --mpi=pmi2 -p Segmentation -n1 --gres=gpu:1 --ntasks-per-node=1 python -u test.py --dataroot ./datasets/horse2zebra --name humen2cartoon_single_xgan_resize_classify --model cycle_gan --gpu_ids 0 --batch_size 16 --epoch 1
