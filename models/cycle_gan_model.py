@@ -196,15 +196,15 @@ class CycleGANModel(BaseModel):
         self.loss_cycle_A = self.criterionCycle(self.rec_A, self.real_A) * lambda_A
         print('loss_cycle_A')
         # Backward cycle loss || G_A(G_B(B)) - B||
-        self.loss_cycle_B = torch.log(torch.log(self.criterionCycle(self.fake_A, self.rec_A.detach()) * lambda_B + 1)+1)/2
+        self.loss_cycle_B = torch.log(self.criterionCycle(self.fake_A, self.rec_A.detach()) + 1) #* lambda_B#+1)
         # combined loss and calculate gradients
 
         #print(self.netD_glass(self.fake_A).size())
         #print(self.label.size())
         self.loss_glass = self.criterionGlass(self.netD_glass(self.fake_A).squeeze(3).squeeze(2), self.label) + self.criterionGlass(self.netD_glass(self.real_B).squeeze(3).squeeze(2), self.label)
-        print(self.loss_glass) 
+        print(self.loss_cycle_B) 
         
-        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_idt_B + self.loss_idt_A + self.loss_glass #- self.loss_cycle_B
+        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_idt_B + self.loss_idt_A + self.loss_glass - torch.clamp(self.loss_cycle_B, min=0, max=0.2)
         self.loss_G.backward()
 
     def optimize_parameters(self):
